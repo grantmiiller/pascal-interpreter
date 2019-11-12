@@ -32,9 +32,31 @@ func IsInteger(s string) bool {
 	return false
 }
 
+func IsFloat(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	if err == nil {
+		return true
+	}
+	return false
+}
+
+func IsJustFloat(s string) bool {
+	return IsFloat(s) && strings.Contains(s, ".")
+}
+
 // ToDigit is just a shortcut so I don't need to remember strconv
 func ToDigit(s string) (int, error) {
 	return strconv.Atoi(s)
+}
+
+// ToFloat is just shortcut so I don't need to remember strconv
+func ToFloat(s string) (float64, error) {
+	return strconv.ParseFloat(s, 64)
+}
+
+// float to string
+func FToS(f float64) string {
+	return fmt.Sprintf("%f", f)
 }
 
 // ContainsString returns true if string is in list
@@ -60,22 +82,41 @@ func (t Token) ToString() string {
 	return fmt.Sprintf("Token: <Type: %s, Value: %s", t.Type, t.Value)
 }
 
+// Token types
 const (
-	TInt = "TInt"
-	TEoF = "TEoF"
-	TMult = "TMult"
 	TAdd = "TAdd"
-	TSub = "TSub"
-	TDiv = "TDiv"
-	TLParen = "TLParen"
-	TRParen = "TRParen"
-	TBegin = "TBegin"
-	TEnd = "TEnd"
-	TDot = "TDot"
 	TAssign = "TAssign"
-	TSemi = "TSemi"
+	TBegin = "TBegin"
+	TColon = "TColon"
+	TComma = "TComma"
+	TDot = "TDot"
+	TEnd = "TEnd"
+	TEoF = "TEoF"
+	TFloatDiv = "TFloatDiv"
 	TId = "TId"
+	TInt = "TInt"
+	TIntConst = "TIntConst"
+	TIntDiv = "TIntDiv"
+	TLParen = "TLParen"
+	TMult = "TMult"
+	TProgram = "TProgram"
+	TRParen = "TRParen"
+	TReal = "TReal"
+	TRealConst = "TRealConst"
+	TSemi = "TSemi"
+	TSub = "TSub"
+	TVar = "TVar"
 )
+
+var RESERVED_KEYWORDS = map[string]Token {
+	"BEGIN": Token{Type: TBegin, Value: "BEGIN"},
+	"DIV": Token{Type: TIntDiv, Value: "DIV"},
+	"END": Token{Type: TEnd, Value: "End"},
+	"INTEGER": Token{Type: TInt, Value: "TInt"},
+	"PROGRAM": Token{Type: TProgram, Value: "PROGRAM"},
+	"REAL": Token{Type: TReal, Value: "REAL"},
+	"VAR": Token{Type: TVar, Value: "TVar"},
+}
 
 type Lexer struct {
 	Text string
@@ -102,14 +143,26 @@ func (l *Lexer) CharAt(i int) string {
 	return string([]rune(l.Text)[i]);
 }
 
-// Parses a string for all values that are integers
-func (l *Lexer) GetInteger() string {
+// Parses a string for all values that are numbers
+func (l *Lexer) GetNumber() Token {
 	val := ""	
+	// Handles integers
 	for ;IsInteger(l.Char); {
 		val = val + l.Char
 		l.Advance()
 	}
-	return val
+	// We may be a float
+	if l.Char == "." {
+		val = val + l.Char
+		l.Advance()
+
+		for ;IsInteger(l.Char); {
+			val = val + l.Char
+			l.Advance()
+		}
+		return Token{Type:TRealConst, Value: val}
+	}
+	return Token{Type:TIntConst, Value: val}
 }
 
 func (l *Lexer) IgnoreWhiteSpace() {
@@ -118,10 +171,14 @@ func (l *Lexer) IgnoreWhiteSpace() {
 	}
 }
 
-var RESERVED_KEYWORDS = map[string]Token {
-	"BEGIN": Token{Type: TBegin, Value: "BEGIN"},
-	"END": Token{Type: TEnd, Value: "End"},
-	"DIV": Token{Type: TDiv, Value: "DIV"},
+func (l *Lexer) IgnoreComments() {
+	if l.Char == "{" {
+		l.Advance()
+		for ; l.Char != "}"; {
+			l.Advance()
+		}
+		l.Advance()
+	}
 }
 
 func (l *Lexer) id() Token{
@@ -157,62 +214,87 @@ func (l *Lexer) Advance() {
 }
 
 func (l *Lexer) GetNextToken() Token {
-	l.IgnoreWhiteSpace()
+	for ;!l.AtEOF(); {
+		l.IgnoreWhiteSpace()
 
+		if l.Char == "{" {
+			l.IgnoreComments()
+			continue
+		}
+
+		if l.AtEOF() {
+			return Token{Type: TEoF, Value: ""}
+		}
+
+		c := l.Char
+
+		if IsAlpha(l.Char) || c == "_" {
+			return l.id()
+		}
+
+		if IsInteger(c) {
+			return l.GetNumber() 
+		}
+
+		if c == ":" && l.Peek() == "=" {
+			l.Advance()
+			l.Advance()
+			return Token{Type: TAssign, Value: ":="}
+		}
+		
+		if c == ":" {
+			l.Advance()
+			return Token{Type: TColon, Value: ":"}
+		}
+
+		if c == "," {
+			l.Advance()
+			return Token{Type: TComma, Value: ","}
+		}
+
+		if c == "/" {
+			l.Advance()
+			return Token{Type: TFloatDiv, Value: "/"}
+		}
+
+		if c == ";" {
+			l.Advance()
+			return Token{Type: TSemi, Value: ";"}
+		}
+		if c == "." {
+			l.Advance()
+			return Token{Type: TDot, Value: "."}
+		}
+		if c == "+" {
+			l.Advance()
+			return Token{Type: TAdd, Value: c}
+		}
+		if c == "-" {
+			l.Advance()
+			return Token{Type: TSub, Value: c}
+		}
+		if c == "*" {
+			l.Advance()
+			return Token{Type: TMult, Value: c}
+		}
+		if c == "(" {
+			l.Advance()
+			return Token{Type: TLParen, Value: c}
+		}
+		if c == ")" {
+			l.Advance()
+			return Token{Type: TRParen, Value: c}
+		}
+
+		fmt.Printf("Failed to parse char: %s\n", c)
+		r, size := utf8.DecodeRuneInString(c)
+		fmt.Printf("Unicode Info: %d %v\n", r, size)
+		panic("Do not understand character");
+	}
 	if l.AtEOF() {
 		return Token{Type: TEoF, Value: ""}
 	}
-
-	c := l.Char
-
-	if IsAlpha(l.Char) || c == "_" {
-		return l.id()
-	}
-
-	if c == ":" && l.Peek() == "=" {
-		l.Advance()
-		l.Advance()
-		return Token{Type: TAssign, Value: ":="}
-	}
-
-	if c == ";" {
-		l.Advance()
-		return Token{Type: TSemi, Value: ";"}
-	}
-
-	if c == "." {
-		l.Advance()
-		return Token{Type: TDot, Value: "."}
-	}
-
-	if IsInteger(c) {
-		return Token{Type: TInt, Value: l.GetInteger()}
-	}
-	if c == "+" {
-		l.Advance()
-		return Token{Type: TAdd, Value: c}
-	}
-	if c == "-" {
-		l.Advance()
-		return Token{Type: TSub, Value: c}
-	}
-	if c == "*" {
-		l.Advance()
-		return Token{Type: TMult, Value: c}
-	}
-	if c == "(" {
-		l.Advance()
-		return Token{Type: TLParen, Value: c}
-	}
-	if c == ")" {
-		l.Advance()
-		return Token{Type: TRParen, Value: c}
-	}
-
-	fmt.Printf("Failed to parse char: %s\n", c)
-	r, size := utf8.DecodeRuneInString(c)
-	fmt.Printf("Unicode Info: %d %v\n", r, size)
-	panic("Do not understand character");
+	panic("Should not ever reach here")
 }
 
 type Node struct {
@@ -220,6 +302,7 @@ type Node struct {
 	Value string
 	Token Token
 	Children []*Node
+	Meta map[string]string
 }
 
 const (
@@ -237,6 +320,14 @@ const (
 	NVar = "NVar"
 	// NoOp
 	NoOp = "NoOp"
+	//NProgram
+	NProgram = "NProgram"
+	//NBlock
+	NBlock = "NBlock"
+	// NVarDecl
+	NVarDecl = "NVarDecl" 
+	// NType
+	NType = "NType"
 )
 
 func (n Node) ToString() string {
@@ -268,6 +359,73 @@ func (p *Parser) eat(t string) {
 // Just an empty statement
 func (p *Parser) noop() *Node {
 	return &Node{Type: NoOp, Value: ""}
+}
+
+// block
+// grammar: block -> declarations compoundStatement
+func (p *Parser) block() *Node {
+	children := p.declarations()
+	// compound statement node
+	n := p.compoundStatement()
+	return &Node{Type: NBlock, Children: append(children,  n)}
+}
+
+// declarations
+// grammar: declarations -> VAR (variableDeclaration TSemi) + | empty
+func (p *Parser) declarations() []*Node {
+	var nl []*Node
+	if p.CurToken.Type == TVar {
+		p.eat(TVar)
+		for ;p.CurToken.Type == TId; {
+			nl = append(nl, p.varDeclaration()...)
+			p.eat(TSemi)
+		}
+	}
+	return nl
+}
+
+// variableDeclaration
+// grammar: variableDeclaration -> TId (TComma TId)* TColon typeSpec
+func (p *Parser) varDeclaration() []*Node {
+	// slice of variable nodes
+	vl := []*Node{&Node{Type: NVar, Value: p.CurToken.Value, Token: p.CurToken}}
+	p.eat(TId)
+
+	for ;p.CurToken.Type == TComma; {
+		p.eat(TComma)
+		vl = append(vl, &Node{Type: NVar, Value: p.CurToken.Value, Token: p.CurToken})
+		p.eat(TId)
+	}
+
+	p.eat(TColon)
+
+	// The type of variables this group is
+	tn := p.typeSpec()
+
+	// slice of variable declaration nodes
+	var nl []*Node
+
+	for _, n := range vl {
+		nl = append(nl, &Node{Type: NVarDecl, Children: []*Node{n, tn}})
+	}
+
+	return nl
+}
+
+// typeSpec
+// grammar: typeSpec -> TInt | TReal
+func (p *Parser) typeSpec() *Node {
+	t := p.CurToken
+	switch t.Type {
+	case TInt: 
+		p.eat(TInt)
+	case TReal:
+		p.eat(TReal)
+	default:
+		fmt.Printf("Found: %s", t.ToString())
+		panic("Panic due to unexpected variable type")
+	}
+	return &Node{Type: NType, Value: t.Type, Token: t}
 }
 
 // variable
@@ -332,11 +490,19 @@ func (p *Parser) compoundStatement() *Node {
 }
 
 // program
-// grammar: program -> compoundStatement TDot
+// grammar: program -> TProgram variable TSemi block TDot
 func (p *Parser) program() *Node {
-	node := p.compoundStatement()	
+	p.eat(TProgram)
+	n := p.variable()
+	pName := n.Value
+	p.eat(TSemi)
+
+	blockNode := p.block()
+	programNode := Node{Type: NProgram, Value: pName, Children: []*Node{blockNode}}
+
 	p.eat(TDot)
-	return node
+
+	return &programNode 
 }
 
 // factor
@@ -347,6 +513,8 @@ func (p *Parser) program() *Node {
 //									| variable
 func (p *Parser) Factor() *Node {
 	t := p.CurToken
+	
+	// If it is a TAdd or TSub, we return a unary op node
 	if ContainsString(t.Type, []string{TAdd, TSub}) {
 		p.eat(t.Type)
 		return &Node{Type: NUnOp, Value: t.Value, Token: t, Children: []*Node{
@@ -354,26 +522,37 @@ func (p *Parser) Factor() *Node {
 			},
 		}
 	}
-	if t.Type == TInt {
-		p.eat(TInt)
-		return &Node{Type: NNum, Token: t, Value: t.Value}
+
+	if t.Type == TIntConst {
+		p.eat(TIntConst)
+		return &Node{Type: NNum, Value: t.Value, Token: t}
 	}
+
+	if t.Type == TRealConst {
+		p.eat(TRealConst)
+		return &Node{Type: NNum, Value: t.Value, Token: t}
+	}
+
+	// This is a parentheses expression, ie (1 + 2)
 	if t.Type == TLParen {
 		p.eat(TLParen)
 		node := p.Expr()
 		p.eat(TRParen)
 		return node
 	}
+
 	if t.Type == TId {
 		return p.variable()
 	}
+
 	fmt.Printf("Erroring in Factor with token: %s\n", p.CurToken.ToString())
 	panic("Could not parse token")
 }
 
 func (p *Parser) Term() *Node {
 	node := p.Factor()	
-	for ;ContainsString(p.CurToken.Type, []string{TMult, TDiv}); {
+
+	for ;ContainsString(p.CurToken.Type, []string{TMult, TIntDiv, TFloatDiv}); {
 		t := p.CurToken
 		p.eat(t.Type)
 		node = &Node{Type: NBinOp, Value: t.Value, Token: t, Children: []*Node{
@@ -431,6 +610,14 @@ func (i *Interpreter) visitNoOp(n Node) string {
 	return ""
 }
 
+func (i *Interpreter) visitVarDecl(n Node) string {
+	return ""
+}
+
+func (i *Interpreter) visitType (n Node) string {
+	return ""
+}
+
 func (i *Interpreter) visitCompound(n Node) {
 	for _, c := range n.Children {
 		i.visit(*c)
@@ -454,23 +641,47 @@ func (i *Interpreter) visitAssign(n Node) {
 }
 
 func (i *Interpreter) visitBinOp(n Node) string {
-	left, err := ToDigit(i.visit(*n.Children[0]))
+	leftS := i.visit(*n.Children[0])
+	rightS := i.visit(*n.Children[1])
+
+	// We need to know whether these values are floats or ints
+	// We default to floats since we are less likely to lose data
+	isFloat := false
+
+	if IsJustFloat(leftS) || IsJustFloat(rightS) {
+		isFloat = true
+	}
+
+	left, err := ToFloat(i.visit(*n.Children[0]))
 	if err != nil {
 		panic("Left value was not a number")	
 	}
-	right, err := ToDigit(i.visit(*n.Children[1]))
+
+	right, err := ToFloat(i.visit(*n.Children[1]))
 	if err != nil {
 		panic("Right value was not a number")	
 	}
+	
 	switch n.Token.Type {
 	case TMult:
-		return strconv.Itoa(left * right)
-	case TDiv:
-		return strconv.Itoa(left / right)
+		if isFloat {
+			return FToS(left * right)
+		}
+		return strconv.Itoa(int(left) * int(right))
+	case TIntDiv:
+		return strconv.Itoa(int(left) / int(right))
+	case TFloatDiv:
+		return FToS(left / right)
 	case TAdd:
-		return strconv.Itoa(left + right)
+		if isFloat {
+			return FToS(left + right)
+		}
+		return strconv.Itoa(int(left) + int(right))
 	case TSub:
-		return strconv.Itoa(left - right)
+		if isFloat {
+			return FToS(left - right)
+		}
+		return strconv.Itoa(int(left) - int(right))
 	}
 	fmt.Printf("Don't understand this binop: %s\n", n.ToString())
 	panic("Unknown Binop")
@@ -492,9 +703,39 @@ func (i *Interpreter) visitUnOp(n Node) string {
 	panic("Cant perform unary operator with node")
 }
 
+
+func (i *Interpreter) visitBlock(n Node) {
+	for _, c := range n.Children[:len(n.Children)-1] {
+		i.visit(*c)
+	}
+	i.visit(*n.Children[len(n.Children)-1])
+}
+
+func (i *Interpreter) visitProgram(n Node) {
+	i.visit(*n.Children[0])
+}
+
 func (i *Interpreter) visit(n Node) string {
 	if n.Type == NoOp {
 		return i.visitNoOp(n)
+	}
+
+	if n.Type == NVarDecl{
+		return i.visitNoOp(n)
+	}
+
+	if n.Type == NType {
+		return i.visitNoOp(n)
+	}
+
+	if n.Type == NProgram {
+		i.visitProgram(n)
+		return ""
+	}
+
+	if n.Type == NBlock {
+		i.visitBlock(n)
+		return ""
 	}
 
 	if n.Type == NComp {
@@ -536,39 +777,42 @@ func (i *Interpreter) PrintGScope() {
 func (i *Interpreter) Interpret() string {
 	tree := i.p.Parse()
 
-	// For Debugging
-	fmt.Println("PRINTING TREE")
-	fmt.Println("===============")
-	printTree(*tree)
-	fmt.Printf("\n\n")
-
 	return i.visit(*tree)
 }
 
-// Prints a node tree in reverse because lazy
-func printTree(n Node) {
-	for _, c := range n.Children {
-		printTree(*c)
-	}
-	if len(n.Children) != 0 {
+func printSubTree(nl []*Node) {
+	if len(nl) > 0 {
+		var children []*Node 
+
+		for _, c := range nl {
+			fmt.Printf("<T: %s, V: %s, C: %d>    ", c.Type, c.Value, len(c.Children))
+			children = append(children, c.Children...)
+		}
+		
 		fmt.Printf("\n")
+
+		printSubTree(children)
 	}
-	fmt.Printf("<T: %s, V: %s>", n.Type, n.Value)
+}
+
+func printTree(n Node) {
+	fmt.Printf("<T: %s, V: %s, C: %d>\n", n.Type, n.Value, len(n.Children))
+
+	printSubTree(n.Children)
 }
 
 func main() {
 	l := NewLexer(`
-		BEGIN
+		PROGRAM Part10AST;
+		VAR
+			 a, b : INTEGER;
+			 y    : REAL;
 
-				BegIN
-						_nUMber := 2;
-						a := _Number;
-						b := 10 * a + 10 * _number div 4;
-						c := a - - b
-				END;
-
-				x := 11;
-		END.
+		BEGIN {Part10AST}
+			 a := 2;
+			 b := 10 * a + 10 * a DIV 4;
+			 y := 20 / 7 + 3.14;
+		END.  {Part10AST}
 	`)
 	p := NewParser(l)
 	i := NewInterpreter(p)
